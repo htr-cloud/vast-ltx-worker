@@ -1,0 +1,8 @@
+.git
+.github
+*.log
+*.tmp
+models
+input
+output
+temp
