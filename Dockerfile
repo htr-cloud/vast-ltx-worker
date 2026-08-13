@@ -53,7 +53,7 @@ WORKDIR ${LTX_HOME}
 # Exakt die vom LTX-Projekt gelockten Dependencies verwenden.
 # natten = schnellerer Diffusion-VAE-Decoder auf Linux/CUDA.
 
-RUN uv sync --frozen --extra natten
+RUN uv sync --frozen
 
 # ------------------------------------------------------------
 # Workspace
