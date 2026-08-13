@@ -1,20 +1,25 @@
-FROM nvidia/cuda:13.0.1-cudnn-runtime-ubuntu24.04
+FROM nvidia/cuda:13.2.0-cudnn-runtime-ubuntu24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG COMFYUI_REF=master
+ARG LTX_REF=main
 
 ENV PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    COMFYUI_PATH=/opt/ComfyUI \
-    PATH="/opt/venv/bin:${PATH}"
+    LTX_HOME=/opt/LTX-2 \
+    MODEL_DIR=/workspace/models \
+    INPUT_DIR=/workspace/input \
+    OUTPUT_DIR=/workspace/output \
+    HF_HOME=/workspace/cache/huggingface
+
+# ------------------------------------------------------------
+# System
+# ------------------------------------------------------------
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3 \
         python3-pip \
         python3-venv \
-        python3-dev \
         git \
         git-lfs \
         ffmpeg \
@@ -22,49 +27,59 @@ RUN apt-get update && \
         wget \
         aria2 \
         ca-certificates \
-        libgl1 \
-        libglib2.0-0 \
-        libsm6 \
-        libxext6 \
-        libxrender1 \
+        jq \
         procps \
         unzip \
-        jq \
+        libgl1 \
+        libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python3 -m venv /opt/venv && \
-    python -m pip install --upgrade pip setuptools wheel
+# ------------------------------------------------------------
+# uv
+# ------------------------------------------------------------
 
-RUN pip install \
-        torch \
-        torchvision \
-        torchaudio \
-        --index-url https://download.pytorch.org/whl/cu130
+RUN python3 -m pip install --break-system-packages uv
 
-RUN git clone https://github.com/Comfy-Org/ComfyUI.git ${COMFYUI_PATH} && \
-    cd ${COMFYUI_PATH} && \
-    git checkout ${COMFYUI_REF}
+# ------------------------------------------------------------
+# LTX-2
+# ------------------------------------------------------------
 
-WORKDIR ${COMFYUI_PATH}
+RUN git clone https://github.com/Lightricks/LTX-2.git ${LTX_HOME} && \
+    cd ${LTX_HOME} && \
+    git checkout ${LTX_REF}
 
-RUN pip install -r requirements.txt
+WORKDIR ${LTX_HOME}
+
+# Exakt die vom LTX-Projekt gelockten Dependencies verwenden.
+# natten = schnellerer Diffusion-VAE-Decoder auf Linux/CUDA.
+
+RUN uv sync --frozen --extra natten
+
+# ------------------------------------------------------------
+# Workspace
+# ------------------------------------------------------------
 
 RUN mkdir -p \
-    input \
-    output \
-    temp \
-    models/checkpoints \
-    models/diffusion_models \
-    models/text_encoders \
-    models/clip \
-    models/vae \
-    models/loras \
-    models/controlnet
+    ${MODEL_DIR} \
+    ${INPUT_DIR} \
+    ${OUTPUT_DIR} \
+    ${HF_HOME}
+
+# Das offizielle LTX-Beispiel erwartet standardmäßig ./models.
+# Deshalb verlinken wir es auf unseren persistenten Workspace.
+
+RUN rm -rf ${LTX_HOME}/models && \
+    ln -s ${MODEL_DIR} ${LTX_HOME}/models
+
+# ------------------------------------------------------------
+# Entrypoint
+# ------------------------------------------------------------
 
 COPY entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 8188
-
 ENTRYPOINT ["/entrypoint.sh"]
+
+# Vast-Container bleibt zunächst aktiv.
+CMD ["sleep", "infinity"]
