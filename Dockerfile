@@ -1,19 +1,17 @@
-FROM nvidia/cuda:13.2.0-cudnn-runtime-ubuntu24.04
+# ============================================================
+# Build stage
+# ============================================================
+
+FROM nvidia/cuda:13.2.0-cudnn-devel-ubuntu24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
+
+# Besser später durch festen Commit/Tag ersetzen.
 ARG LTX_REF=main
 
 ENV PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    LTX_HOME=/opt/LTX-2 \
-    MODEL_DIR=/workspace/models \
-    INPUT_DIR=/workspace/input \
-    OUTPUT_DIR=/workspace/output \
-    HF_HOME=/workspace/cache/huggingface
-
-# ------------------------------------------------------------
-# System
-# ------------------------------------------------------------
+    UV_LINK_MODE=copy \
+    LTX_HOME=/opt/LTX-2
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -23,64 +21,80 @@ RUN apt-get update && \
         build-essential \
         git \
         git-lfs \
-        ffmpeg \
-        curl \
-        wget \
-        aria2 \
         ca-certificates \
-        jq \
-        procps \
-        unzip \
-        libgl1 \
-        libglib2.0-0 \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ------------------------------------------------------------
-# uv
-# ------------------------------------------------------------
+RUN python3 -m pip install \
+    --break-system-packages \
+    --no-cache-dir \
+    uv
 
-RUN python3 -m pip install --break-system-packages uv
-
-# ------------------------------------------------------------
-# LTX-2
-# ------------------------------------------------------------
-
-RUN git clone https://github.com/Lightricks/LTX-2.git ${LTX_HOME} && \
+RUN git clone \
+    --filter=blob:none \
+    https://github.com/Lightricks/LTX-2.git \
+    ${LTX_HOME} && \
     cd ${LTX_HOME} && \
     git checkout ${LTX_REF}
 
 WORKDIR ${LTX_HOME}
 
-# Exakt die vom LTX-Projekt gelockten Dependencies verwenden.
-# natten = schnellerer Diffusion-VAE-Decoder auf Linux/CUDA.
+# Wichtig:
+# - frozen = exakt uv.lock
+# - no-dev = keine Entwicklungsabhängigkeiten
+# - natten = schnellster Diffusion-VAE-Pfad unter Linux/CUDA
+RUN uv sync \
+    --frozen \
+    --no-dev \
+    --extra natten
 
-RUN uv sync --no-dev --verbose
 
-# ------------------------------------------------------------
-# Workspace
-# ------------------------------------------------------------
+# ============================================================
+# Runtime stage
+# ============================================================
+
+FROM nvidia/cuda:13.2.0-cudnn-runtime-ubuntu24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+ENV PYTHONUNBUFFERED=1 \
+    LTX_HOME=/opt/LTX-2 \
+    MODEL_DIR=/workspace/models \
+    INPUT_DIR=/workspace/input \
+    OUTPUT_DIR=/workspace/output \
+    HF_HOME=/workspace/cache/huggingface \
+    PATH="/opt/LTX-2/.venv/bin:${PATH}"
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3 \
+        ffmpeg \
+        ca-certificates \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Fertige LTX-Installation inklusive .venv
+COPY --from=builder /opt/LTX-2 /opt/LTX-2
+
+# rclone direkt als Binary installieren
+RUN curl -fsSL https://rclone.org/install.sh | bash
 
 RUN mkdir -p \
     ${MODEL_DIR} \
     ${INPUT_DIR} \
     ${OUTPUT_DIR} \
-    ${HF_HOME}
-
-# Das offizielle LTX-Beispiel erwartet standardmäßig ./models.
-# Deshalb verlinken wir es auf unseren persistenten Workspace.
+    ${HF_HOME} \
+    /workspace/af
 
 RUN rm -rf ${LTX_HOME}/models && \
     ln -s ${MODEL_DIR} ${LTX_HOME}/models
 
-# ------------------------------------------------------------
-# Entrypoint
-# ------------------------------------------------------------
-
+COPY ltx_worker.py /workspace/af/ltx_worker.py
 COPY entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh
 
-ENTRYPOINT ["/entrypoint.sh"]
+WORKDIR /workspace
 
-# Vast-Container bleibt zunächst aktiv.
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["sleep", "infinity"]
