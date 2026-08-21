@@ -5,8 +5,6 @@
 FROM nvidia/cuda:13.2.0-cudnn-devel-ubuntu24.04 AS builder
 
 ARG DEBIAN_FRONTEND=noninteractive
-
-# Besser später durch festen Commit/Tag ersetzen.
 ARG LTX_REF=main
 
 ENV PYTHONUNBUFFERED=1 \
@@ -23,7 +21,6 @@ RUN apt-get update && \
         git-lfs \
         ca-certificates \
         curl \
-        rclone \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m pip install \
@@ -40,10 +37,6 @@ RUN git clone \
 
 WORKDIR ${LTX_HOME}
 
-# Wichtig:
-# - frozen = exakt uv.lock
-# - no-dev = keine Entwicklungsabhängigkeiten
-# - natten = schnellster Diffusion-VAE-Pfad unter Linux/CUDA
 RUN uv sync --extra natten
 
 
@@ -69,6 +62,7 @@ RUN apt-get update && \
         ffmpeg \
         ca-certificates \
         curl \
+        rclone \
     && rm -rf /var/lib/apt/lists/*
 
 # Fertige LTX-Installation inklusive .venv
@@ -88,6 +82,15 @@ COPY ltx_worker.py /workspace/af/ltx_worker.py
 COPY entrypoint.sh /entrypoint.sh
 
 RUN chmod +x /entrypoint.sh
+
+# ------------------------------------------------------------
+# Runtime-Prüfung
+# ------------------------------------------------------------
+
+RUN python3 --version && \
+    /opt/LTX-2/.venv/bin/python --version && \
+    ffmpeg -version | head -n 1 && \
+    rclone version | head -n 1
 
 WORKDIR /workspace
 
