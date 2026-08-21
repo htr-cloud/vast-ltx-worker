@@ -43,10 +43,7 @@ WORKDIR ${LTX_HOME}
 # - frozen = exakt uv.lock
 # - no-dev = keine Entwicklungsabhängigkeiten
 # - natten = schnellster Diffusion-VAE-Pfad unter Linux/CUDA
-RUN uv sync \
-    --frozen \
-    --no-dev \
-    --extra natten
+RUN uv sync --extra natten
 
 
 # ============================================================
