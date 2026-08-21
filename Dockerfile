@@ -23,6 +23,7 @@ RUN apt-get update && \
         git-lfs \
         ca-certificates \
         curl \
+        rclone \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python3 -m pip install \
@@ -72,9 +73,6 @@ RUN apt-get update && \
 
 # Fertige LTX-Installation inklusive .venv
 COPY --from=builder /opt/LTX-2 /opt/LTX-2
-
-# rclone direkt als Binary installieren
-RUN curl -fsSL https://rclone.org/install.sh | bash
 
 RUN mkdir -p \
     ${MODEL_DIR} \
