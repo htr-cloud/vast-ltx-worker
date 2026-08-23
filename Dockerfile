@@ -24,13 +24,18 @@ RUN apt-get update && \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# uv installieren
+
+# ------------------------------------------------------------
+# uv nur fuer Build / Dependency-Management
+# ------------------------------------------------------------
+
 RUN python3 -m pip install \
     --break-system-packages \
     --no-cache-dir \
     uv
 
 RUN uv --version
+
 
 # ------------------------------------------------------------
 # LTX-2
@@ -45,25 +50,32 @@ RUN git clone \
 
 WORKDIR ${LTX_HOME}
 
+
 # ------------------------------------------------------------
-# LTX Runtime + NATTEN + RTX-5090 / Blackwell Kernels
+# LTX Runtime
 #
-# Auf realer RTX 5090 erfolgreich getestet mit:
-# Torch 2.13.0+cu132
-# CUDA 13.2
-# Compute Capability 12.0
-# ltx-kernels 1.2.0
+# Getestet auf RTX 5090:
+# - Torch 2.13.0+cu132
+# - CUDA 13.2
+# - Compute Capability 12.0
+# - NATTEN
+# - ltx-kernels
+# - nvfp4_cpp
+#
+# TORCH_CUDA_ARCH_LIST=12.0:
+# gezielter Build fuer RTX 5090 / Blackwell Consumer
 # ------------------------------------------------------------
 
 RUN uv sync \
     --extra natten \
     --group kernels
 
+
 # ------------------------------------------------------------
 # Build-Verifikation
 #
-# Noch kein GPU-Test möglich, aber alle kompilierten Extensions
-# müssen importierbar sein.
+# Hier gibt es noch keine GPU.
+# Deshalb pruefen wir Imports und gebaute Extensions.
 # ------------------------------------------------------------
 
 RUN /opt/LTX-2/.venv/bin/python - <<'PY'
@@ -77,24 +89,27 @@ print("Torch:", torch.__version__)
 print("Torch CUDA:", torch.version.cuda)
 print("ltx_kernels:", ltx_kernels.__file__)
 
-for name in (
+required_extensions = (
     "all2all_cpp",
     "ops_cpp",
     "blockwise_cpp",
     "nvfp4_cpp",
-):
-    mod = importlib.import_module(name)
-    print(f"{name}: OK -> {mod.__file__}")
+)
 
-q = [x.value for x in QuantizationKind]
-print("Quantization:", q)
+for name in required_extensions:
+    module = importlib.import_module(name)
+    print(f"{name}: OK -> {module.__file__}")
 
-assert "fp8-cast" in q
-assert "fp8-scaled-mm" in q
-assert "nvfp4-cast" in q
-assert "nvfp4-prequant" in q
+quantization = [x.value for x in QuantizationKind]
 
-print("LTX build check: OK")
+print("Quantization:", quantization)
+
+assert "fp8-cast" in quantization
+assert "fp8-scaled-mm" in quantization
+assert "nvfp4-cast" in quantization
+assert "nvfp4-prequant" in quantization
+
+print("LTX BUILD CHECK: OK")
 PY
 
 
@@ -112,7 +127,21 @@ ENV PYTHONUNBUFFERED=1 \
     INPUT_DIR=/workspace/input \
     OUTPUT_DIR=/workspace/output \
     HF_HOME=/workspace/cache/huggingface \
-    PATH="/opt/LTX-2/.venv/bin:/usr/local/bin:${PATH}"
+    PATH="/opt/LTX-2/.venv/bin:${PATH}"
+
+
+# ------------------------------------------------------------
+# Runtime-Systempakete
+#
+# Kein:
+# - gcc
+# - g++
+# - nvcc
+# - build-essential
+# - uv
+#
+# notwendig fuer normalen Renderbetrieb.
+# ------------------------------------------------------------
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -123,10 +152,14 @@ RUN apt-get update && \
         rclone \
     && rm -rf /var/lib/apt/lists/*
 
+
 # ------------------------------------------------------------
-# Fertige LTX-Installation inklusive:
+# Fertige LTX Installation
+#
+# Enthalten:
 # - .venv
 # - torch
+# - CUDA Python Runtime Dependencies
 # - natten
 # - ltx-kernels
 # - nvfp4_cpp
@@ -134,41 +167,52 @@ RUN apt-get update && \
 
 COPY --from=builder /opt/LTX-2 /opt/LTX-2
 
-# Der aktuelle ltx_worker verwendet uv auch zur Runtime-Prüfung.
-COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
-
-# uvx ggf. ebenfalls mitnehmen, falls vorhanden/benötigt
-# COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
 
 # ------------------------------------------------------------
 # Workspace
+#
+# /workspace/af bleibt absichtlich leer.
+# ltx_worker.py wird spaeter durch local_worker.py deployed.
 # ------------------------------------------------------------
 
 RUN mkdir -p \
     ${MODEL_DIR} \
     ${INPUT_DIR} \
     ${OUTPUT_DIR} \
+    ${OUTPUT_DIR}/af_jobs \
     ${HF_HOME} \
     /workspace/af
+
+
+# ------------------------------------------------------------
+# Modelle ausserhalb des Image-Layers
+# ------------------------------------------------------------
 
 RUN rm -rf ${LTX_HOME}/models && \
     ln -s ${MODEL_DIR} ${LTX_HOME}/models
 
-COPY ltx_worker.py /workspace/af/ltx_worker.py
-COPY entrypoint.sh /entrypoint.sh
-
-RUN chmod 700 /workspace/af/ltx_worker.py && \
-    chmod +x /entrypoint.sh
 
 # ------------------------------------------------------------
-# Runtime-Prüfung ohne GPU
+# Entrypoint
+# ------------------------------------------------------------
+
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod 755 /entrypoint.sh
+
+
+# ------------------------------------------------------------
+# Runtime Image Check
+#
+# Noch ohne GPU, aber alle Runtime-Module und kompilierten
+# Extensions muessen vorhanden sein.
 # ------------------------------------------------------------
 
 RUN python3 --version && \
     /opt/LTX-2/.venv/bin/python --version && \
-    uv --version && \
     ffmpeg -version | head -n 1 && \
     rclone version | head -n 1
+
 
 RUN /opt/LTX-2/.venv/bin/python - <<'PY'
 import importlib
@@ -187,17 +231,23 @@ for name in (
     "blockwise_cpp",
     "nvfp4_cpp",
 ):
-    mod = importlib.import_module(name)
-    print(f"{name}: OK -> {mod.__file__}")
+    module = importlib.import_module(name)
+    print(f"{name}: OK -> {module.__file__}")
 
-q = [x.value for x in QuantizationKind]
-print("Quantization:", q)
+quantization = [x.value for x in QuantizationKind]
 
-assert "nvfp4-cast" in q
-assert "nvfp4-prequant" in q
+print("Quantization:", quantization)
 
-print("Runtime image check: OK")
+assert "nvfp4-cast" in quantization
+assert "nvfp4-prequant" in quantization
+
+print("LTX RUNTIME IMAGE CHECK: OK")
 PY
+
+
+# ============================================================
+# Container
+# ============================================================
 
 WORKDIR /workspace
 
