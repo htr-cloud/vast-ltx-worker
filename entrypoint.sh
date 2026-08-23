@@ -2,87 +2,97 @@
 
 set -euo pipefail
 
+LTX_HOME="${LTX_HOME:-/opt/LTX-2}"
+LTX_PYTHON="${LTX_PYTHON:-${LTX_HOME}/.venv/bin/python}"
+
+MODEL_DIR="${MODEL_DIR:-/workspace/models}"
+INPUT_DIR="${INPUT_DIR:-/workspace/input}"
+OUTPUT_DIR="${OUTPUT_DIR:-/workspace/output}"
+
 echo "============================================================"
-echo " LTX Worker"
+echo " LTX-2 Runtime"
 echo "============================================================"
 echo
 
-cd /opt/LTX-2
+cd "${LTX_HOME}"
 
 echo "Python:"
-python3 --version
+"${LTX_PYTHON}" --version
 
 echo
 
 echo "LTX revision:"
-git rev-parse --short HEAD
+if command -v git >/dev/null 2>&1 && [ -d "${LTX_HOME}/.git" ]; then
+    git rev-parse --short HEAD || true
+else
+    echo "git metadata unavailable"
+fi
 
 echo
 
-echo "PyTorch / CUDA:"
+echo "PyTorch / CUDA / LTX kernels:"
 
-uv run python - <<'PY'
+"${LTX_PYTHON}" - <<'PY'
+import importlib.util
 import torch
 
 print("PyTorch:", torch.__version__)
 print("CUDA Runtime:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
 
+print(
+    "ltx_kernels:",
+    importlib.util.find_spec("ltx_kernels") is not None,
+)
+
+print(
+    "natten:",
+    importlib.util.find_spec("natten") is not None,
+)
+
+try:
+    import nvfp4_cpp
+    print("nvfp4_cpp: True")
+except Exception as exc:
+    print("nvfp4_cpp: False")
+    print("nvfp4 error:", exc)
+
 if torch.cuda.is_available():
-    device = torch.cuda.get_device_properties(0)
+    props = torch.cuda.get_device_properties(0)
 
     print("GPU:", torch.cuda.get_device_name(0))
     print(
         "VRAM:",
-        round(device.total_memory / 1024**3, 2),
-        "GB"
-    )
-PY
-
-echo
-echo "Model directory:  ${MODEL_DIR}"
-echo "Input directory:  ${INPUT_DIR}"
-echo "Output directory: ${OUTPUT_DIR}"
-echo
-
-exec "$@"#!/usr/bin/env bash
-
-set -euo pipefail
-
-echo "============================================================"
-echo " ComfyUI Worker"
-echo "============================================================"
-
-echo
-python --version
-
-echo
-python - <<'PY'
-import torch
-
-print("PyTorch:", torch.__version__)
-print("CUDA Runtime:", torch.version.cuda)
-print("CUDA available:", torch.cuda.is_available())
-
-if torch.cuda.is_available():
-    print("GPU:", torch.cuda.get_device_name(0))
-    print(
-        "VRAM:",
-        round(
-            torch.cuda.get_device_properties(0).total_memory
-            / 1024**3,
-            2,
-        ),
+        round(props.total_memory / 1024**3, 2),
         "GB",
     )
+
+    print(
+        "Compute Capability:",
+        ".".join(
+            str(x)
+            for x in torch.cuda.get_device_capability(0)
+        ),
+    )
 PY
 
 echo
-echo "Starting ComfyUI..."
 
-cd /opt/ComfyUI
+echo "Directories:"
+echo "  Models: ${MODEL_DIR}"
+echo "  Input:  ${INPUT_DIR}"
+echo "  Output: ${OUTPUT_DIR}"
 
-exec python main.py \
-    --listen 0.0.0.0 \
-    --port 8188 \
-    "$@"
+mkdir -p \
+    "${MODEL_DIR}" \
+    "${INPUT_DIR}" \
+    "${OUTPUT_DIR}" \
+    "${OUTPUT_DIR}/af_jobs" \
+    /workspace/af
+
+echo
+echo "Runtime ready."
+echo "============================================================"
+echo
+
+exec "$@"
