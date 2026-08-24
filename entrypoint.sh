@@ -8,7 +8,7 @@ LTX_PYTHON="${LTX_PYTHON:-${LTX_HOME}/.venv/bin/python}"
 MODEL_DIR="${MODEL_DIR:-/workspace/models}"
 INPUT_DIR="${INPUT_DIR:-/workspace/input}"
 OUTPUT_DIR="${OUTPUT_DIR:-/workspace/output}"
-
+export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64"
 echo "============================================================"
 echo " LTX-2 Runtime"
 echo "============================================================"
