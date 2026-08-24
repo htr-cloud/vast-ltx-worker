@@ -133,24 +133,46 @@ ENV PYTHONUNBUFFERED=1 \
 # ------------------------------------------------------------
 # Runtime-Systempakete
 #
-# Kein:
-# - gcc
-# - g++
-# - nvcc
-# - build-essential
-# - uv
+# Der aktuell bewaehrte ltx_worker.py verwendet:
+# - uv run python ...
+# - pip fuer Runtime-/Diagnosefaelle
+# - /usr/bin/gcc und /usr/bin/g++ ueber CC/CXX
+# - rclone fuer Garage/S3
 #
-# notwendig fuer normalen Renderbetrieb.
+# Deshalb muessen diese Werkzeuge auch im FINALEN Runtime-Image
+# vorhanden sein und nicht nur im Builder.
 # ------------------------------------------------------------
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         python3 \
+        python3-pip \
+        python3-dev \
+        build-essential \
+        git \
+        git-lfs \
         ffmpeg \
         ca-certificates \
         curl \
         rclone \
     && rm -rf /var/lib/apt/lists/*
+
+
+# ------------------------------------------------------------
+# uv auch im Runtime-Image
+#
+# Der Worker startet LTX mit:
+#   uv run python -m ltx_pipelines.distilled
+#
+# Daher reicht die uv-Installation im Builder nicht aus.
+# ------------------------------------------------------------
+
+RUN python3 -m pip install \
+    --break-system-packages \
+    --no-cache-dir \
+    uv && \
+    python3 -m pip --version && \
+    uv --version
 
 
 # ------------------------------------------------------------
@@ -209,6 +231,10 @@ RUN chmod 755 /entrypoint.sh
 # ------------------------------------------------------------
 
 RUN python3 --version && \
+    python3 -m pip --version && \
+    uv --version && \
+    gcc --version | head -n 1 && \
+    g++ --version | head -n 1 && \
     /opt/LTX-2/.venv/bin/python --version && \
     ffmpeg -version | head -n 1 && \
     rclone version | head -n 1
