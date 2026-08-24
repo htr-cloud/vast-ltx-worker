@@ -126,6 +126,8 @@ ENV PYTHONUNBUFFERED=1 \
     INPUT_DIR=/workspace/input \
     OUTPUT_DIR=/workspace/output \
     HF_HOME=/workspace/cache/huggingface
+    
+ENV LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/usr/local/cuda/lib64"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
