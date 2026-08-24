@@ -16,6 +16,34 @@ echo
 
 cd "${LTX_HOME}"
 
+echo "Runtime tools:"
+
+for tool in uv rclone ffmpeg gcc g++; do
+    if ! command -v "${tool}" >/dev/null 2>&1; then
+        echo "FEHLER: ${tool} fehlt im Runtime-Image" >&2
+        exit 20
+    fi
+done
+
+if ! python3 -m pip --version >/dev/null 2>&1; then
+    echo "FEHLER: python3-pip fehlt im Runtime-Image" >&2
+    exit 21
+fi
+
+printf "  uv:      "
+uv --version
+printf "  pip:     "
+python3 -m pip --version
+printf "  rclone:  "
+rclone version | head -n 1
+printf "  ffmpeg:  "
+ffmpeg -version | head -n 1
+printf "  gcc:     "
+gcc --version | head -n 1
+printf "  g++:     "
+g++ --version | head -n 1
+
+echo
 echo "Python:"
 "${LTX_PYTHON}" --version
 
