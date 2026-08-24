@@ -110,10 +110,7 @@ assert "nvfp4-cast" in quantization
 assert "nvfp4-prequant" in quantization
 
 print("LTX BUILD CHECK: OK")
-PY
-
-
-# ============================================================
+PY# ============================================================
 # Runtime stage
 # ============================================================
 
@@ -126,22 +123,7 @@ ENV PYTHONUNBUFFERED=1 \
     MODEL_DIR=/workspace/models \
     INPUT_DIR=/workspace/input \
     OUTPUT_DIR=/workspace/output \
-    HF_HOME=/workspace/cache/huggingface \
-    PATH="/opt/LTX-2/.venv/bin:${PATH}"
-
-
-# ------------------------------------------------------------
-# Runtime-Systempakete
-#
-# Der aktuell bewaehrte ltx_worker.py verwendet:
-# - uv run python ...
-# - pip fuer Runtime-/Diagnosefaelle
-# - /usr/bin/gcc und /usr/bin/g++ ueber CC/CXX
-# - rclone fuer Garage/S3
-#
-# Deshalb muessen diese Werkzeuge auch im FINALEN Runtime-Image
-# vorhanden sein und nicht nur im Builder.
-# ------------------------------------------------------------
+    HF_HOME=/workspace/cache/huggingface
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -149,52 +131,45 @@ RUN apt-get update && \
         python3-pip \
         python3-dev \
         build-essential \
+        gcc \
+        g++ \
         git \
         git-lfs \
         ffmpeg \
+        rclone \
         ca-certificates \
         curl \
-        rclone \
     && rm -rf /var/lib/apt/lists/*
 
-
 # ------------------------------------------------------------
-# uv auch im Runtime-Image
-#
-# Der Worker startet LTX mit:
-#   uv run python -m ltx_pipelines.distilled
-#
-# Daher reicht die uv-Installation im Builder nicht aus.
+# uv im Runtime-Image
+# WICHTIG: explizit System-Python verwenden
 # ------------------------------------------------------------
 
-RUN python3 -m pip install \
-    --break-system-packages \
-    --no-cache-dir \
-    uv && \
-    python3 -m pip --version && \
-    uv --version
-
+RUN /usr/bin/python3 -m pip install \
+        --break-system-packages \
+        --no-cache-dir \
+        uv
 
 # ------------------------------------------------------------
-# Fertige LTX Installation
-#
-# Enthalten:
-# - .venv
-# - torch
-# - CUDA Python Runtime Dependencies
-# - natten
-# - ltx-kernels
-# - nvfp4_cpp
+# Fertige LTX-Installation inklusive .venv
 # ------------------------------------------------------------
 
 COPY --from=builder /opt/LTX-2 /opt/LTX-2
 
+# ------------------------------------------------------------
+# pip auch innerhalb der LTX-venv installieren
+# ------------------------------------------------------------
+
+RUN /usr/local/bin/uv pip install \
+        --python /opt/LTX-2/.venv/bin/python \
+        pip
+
+# Erst JETZT die LTX-venv an den Anfang des PATH setzen
+ENV PATH="/opt/LTX-2/.venv/bin:${PATH}"
 
 # ------------------------------------------------------------
 # Workspace
-#
-# /workspace/af bleibt absichtlich leer.
-# ltx_worker.py wird spaeter durch local_worker.py deployed.
 # ------------------------------------------------------------
 
 RUN mkdir -p \
@@ -205,22 +180,14 @@ RUN mkdir -p \
     ${HF_HOME} \
     /workspace/af
 
-
-# ------------------------------------------------------------
-# Modelle ausserhalb des Image-Layers
-# ------------------------------------------------------------
-
 RUN rm -rf ${LTX_HOME}/models && \
     ln -s ${MODEL_DIR} ${LTX_HOME}/models
-
-
-# ------------------------------------------------------------
-# Entrypoint
-# ------------------------------------------------------------
 
 COPY entrypoint.sh /entrypoint.sh
 
 RUN chmod 755 /entrypoint.sh
+
+
 
 
 # ------------------------------------------------------------
