@@ -110,7 +110,9 @@ assert "nvfp4-cast" in quantization
 assert "nvfp4-prequant" in quantization
 
 print("LTX BUILD CHECK: OK")
-PY# ============================================================
+PY
+
+# ============================================================
 # Runtime stage
 # ============================================================
 
