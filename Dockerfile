@@ -197,14 +197,20 @@ RUN chmod 755 /entrypoint.sh
 # Extensions muessen vorhanden sein.
 # ------------------------------------------------------------
 
-RUN python3 --version && \
-    python3 -m pip --version && \
-    uv --version && \
-    gcc --version | head -n 1 && \
-    g++ --version | head -n 1 && \
+RUN echo "=== System Python ===" && \
+    /usr/bin/python3 --version && \
+    /usr/bin/python3 -m pip --version && \
+    echo "=== uv ===" && \
+    /usr/local/bin/uv --version && \
+    echo "=== LTX Python ===" && \
     /opt/LTX-2/.venv/bin/python --version && \
-    ffmpeg -version | head -n 1 && \
-    rclone version | head -n 1
+    /opt/LTX-2/.venv/bin/python -m pip --version && \
+    echo "=== Compiler ===" && \
+    /usr/bin/gcc --version && \
+    /usr/bin/g++ --version && \
+    echo "=== Runtime Tools ===" && \
+    /usr/bin/ffmpeg -version && \
+    /usr/bin/rclone version
 
 
 RUN /opt/LTX-2/.venv/bin/python - <<'PY'
